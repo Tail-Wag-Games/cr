@@ -449,6 +449,7 @@ enum cr_op {
     CR_STEP = 1,
     CR_UNLOAD = 2,
     CR_CLOSE = 3,
+    CR_INIT = 4,
 };
 
 enum cr_failure {
@@ -535,7 +536,7 @@ struct cr_plugin {
 #endif
 
 #ifndef CR_MAIN_FUNC
-#   define CR_MAIN_FUNC "cr_main"
+#   define CR_MAIN_FUNC "fragPlugin"
 #endif
 
 #ifndef CR_ASSERT
@@ -1940,7 +1941,7 @@ static void cr_plugin_reload(cr_plugin &ctx) {
         if (!cr_plugin_load_internal(ctx, false)) {
             return;
         }
-        int r = cr_plugin_main(ctx, CR_LOAD);
+        int r = cr_plugin_main(ctx, ctx.version == 1 ? CR_INIT : CR_LOAD);
         if (r < 0 && !ctx.failure) {
             CR_LOG("2 FAILURE: %d\n", r);
             ctx.failure = CR_USER;
