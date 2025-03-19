@@ -442,6 +442,7 @@ enum cr_op {
     CR_STEP = 1,
     CR_UNLOAD = 2,
     CR_CLOSE = 3,
+    CR_INIT = 4,
 };
 
 enum cr_failure {
@@ -464,6 +465,7 @@ enum cr_failure {
 struct cr_plugin;
 
 typedef int (*cr_plugin_main_func)(struct cr_plugin *ctx, enum cr_op operation);
+typedef void (*cr_plugin_event_func)(const void* e);
 
 // public interface for the plugin context, this has some user facing
 // variables that may be used to manage reload feedback.
@@ -656,6 +658,7 @@ struct cr_internal {
     time_t timestamp = {};
     void *handle = nullptr;
     cr_plugin_main_func main = nullptr;
+    cr_plugin_event_func event_fn = nullptr;
     cr_plugin_segment seg = {};
     cr_plugin_section data[cr_plugin_section_type::count]
                           [cr_plugin_section_version::count] = {};
@@ -675,6 +678,7 @@ static int cr_plugin_unload(cr_plugin &ctx, bool rollback, bool close);
 static bool cr_plugin_changed(cr_plugin &ctx);
 static bool cr_plugin_rollback(cr_plugin &ctx);
 static int cr_plugin_main(cr_plugin &ctx, cr_op operation);
+static void cr_plugin_event_call(cr_plugin &ctx, const void* e);
 
 void cr_set_temporary_path(cr_plugin &ctx, const std::string &path) {
     auto pimpl = (cr_internal *)ctx.p;
@@ -1100,14 +1104,14 @@ static so_handle cr_so_load(const std::string &filename) {
     return new_dll;
 }
 
-static cr_plugin_main_func cr_so_symbol(so_handle handle) {
+static void* cr_so_symbol(so_handle handle, const char* name) {
     CR_ASSERT(handle);
-    auto new_main = (cr_plugin_main_func)GetProcAddress(handle, CR_MAIN_FUNC);
-    if (!new_main) {
-        CR_ERROR("Couldn't find plugin entry point: %d\n",
-                GetLastError());
+    FARPROC sym = GetProcAddress(handle, name);
+    if (!sym) {
+        CR_ERROR("Couldn't find plugin entry point '%s': %d\n", name,
+                 GetLastError());
     }
-    return new_main;
+    return (void*)sym;
 }
 
 #ifdef __MINGW32__
@@ -1196,6 +1200,23 @@ static int cr_plugin_main(cr_plugin &ctx, cr_op operation) {
 
     return -1;
 }
+
+static void cr_plugin_event_call(cr_plugin &ctx, const void* e)
+{
+    auto p = (cr_internal *)ctx.p;
+#ifndef __MINGW32__
+    __try {
+#endif
+        if (p->event_fn) {
+            p->event_fn(e);
+        }
+#ifndef __MINGW32__
+    } __except (cr_seh_filter(ctx, GetExceptionCode())) {
+        return;
+    }
+#endif
+}
+
 
 #endif // CR_WINDOWS
 
@@ -1603,14 +1624,14 @@ static so_handle cr_so_load(const std::string &new_file) {
     return new_dll;
 }
 
-static cr_plugin_main_func cr_so_symbol(so_handle handle) {
+static void* cr_so_symbol(so_handle handle, const char* name) {
     CR_ASSERT(handle);
     dlerror();
-    auto new_main = (cr_plugin_main_func)dlsym(handle, CR_MAIN_FUNC);
-    if (!new_main) {
-        CR_ERROR("Couldn't find plugin entry point: %s\n", dlerror());
+    auto sym = dlsym(handle, name);
+    if (!sym) {
+        CR_ERROR("Couldn't find plugin entry point '%s': %s\n", name, dlerror());
     }
-    return new_main;
+    return sym;
 }
 
 sigjmp_buf env;
@@ -1684,6 +1705,19 @@ static int cr_plugin_main(cr_plugin &ctx, cr_op operation) {
     return -1;
 }
 
+static void cr_plugin_event_call(cr_plugin& ctx, const void* e) {
+    if (int sig = sigsetjmp(env, 1)) {
+        ctx.failure = cr_signal_to_failure(sig);
+    } else {
+        auto p = (cr_internal *)ctx.p;
+        CR_ASSERT(p);
+        if (p->event_fn) {
+            p->event_fn(e);
+        }
+    }
+}
+
+
 #endif // CR_LINUX || CR_OSX
 
 static bool cr_plugin_load_internal(cr_plugin &ctx, bool rollback) {
@@ -1739,7 +1773,7 @@ static bool cr_plugin_load_internal(cr_plugin &ctx, bool rollback) {
             cr_plugin_sections_reload(ctx, cr_plugin_section_version::current);
         }
 
-        auto new_main = cr_so_symbol(new_dll);
+        auto new_main = (cr_plugin_main_func)cr_so_symbol(new_dll, CR_MAIN_FUNC);
         if (!new_main) {
             return false;
         }
@@ -1750,6 +1784,7 @@ static bool cr_plugin_load_internal(cr_plugin &ctx, bool rollback) {
         if (ctx.failure != CR_BAD_IMAGE) {
             p2->timestamp = cr_last_write_time(file);
         }
+        p2->event_fn = (cr_plugin_event_func)cr_so_symbol(new_dll, CR_EVENT_FUNC);
         ctx.version = new_version;
         CR_LOG("loaded: %s (version: %d)\n", new_file.c_str(), ctx.version);
     } else {
@@ -1933,7 +1968,7 @@ static void cr_plugin_reload(cr_plugin &ctx) {
         if (!cr_plugin_load_internal(ctx, false)) {
             return;
         }
-        int r = cr_plugin_main(ctx, CR_LOAD);
+        int r = cr_plugin_main(ctx, ctx.version == 1 ? CR_INIT : CR_LOAD);
         if (r < 0 && !ctx.failure) {
             CR_LOG("2 FAILURE: %d\n", r);
             ctx.failure = CR_USER;
@@ -1973,6 +2008,11 @@ extern "C" int cr_plugin_update(cr_plugin &ctx, bool reloadCheck = true) {
         ctx.failure = CR_USER;
     }
     return r;
+}
+
+extern "C" void cr_plugin_event(cr_plugin& ctx, const void* e) {
+    if (ctx.failure == CR_NONE)
+        cr_plugin_event_call(ctx, e);
 }
 
 // Loads a plugin from the specified full path (or current directory if NULL).
