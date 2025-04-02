@@ -9,7 +9,7 @@
 #include <GL/gl3w.h> // gl*
 #include <GLFW/glfw3.h> // GLFW_KEY*
 
-#include "../cr.h"
+#include "cr.h"
 
 // To test imgui 100% guest side, enable this
 //#define IMGUI_GUEST_ONLY
@@ -342,7 +342,7 @@ bool imui_init() {
 void imui_shutdown() {
     ImGui_ImplGlfwGL3_InvalidateDeviceObjects();
 #if !defined(IMGUI_GUEST_ONLY)
-    ImGui::Shutdown();
+    ImGui::Shutdown(g_data->imgui_context);
     ImGui::DestroyContext(g_data->imgui_context);
 #else
     ImGui::Shutdown(g_imgui_context);
