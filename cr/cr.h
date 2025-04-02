@@ -1148,12 +1148,12 @@ static so_handle cr_so_load(const std::string &filename) {
 
 static void* cr_so_symbol(so_handle handle, const char* name) {
     CR_ASSERT(handle);
-    auto new_main = (cr_plugin_main_func)(void*)GetProcAddress(handle, CR_MAIN_FUNC);
-    if (!new_main) {
-        CR_ERROR("Couldn't find plugin entry point: %d\n",
-                GetLastError());
+    auto sym = GetProcAddress(handle, name);
+    if (!sym) {
+        CR_ERROR("Couldn't find plugin entry point '%s': %d\n", name,
+                 GetLastError());
     }
-    return (void*)sym;
+    return sym;
 }
 
 #ifdef __MINGW32__
