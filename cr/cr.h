@@ -572,7 +572,7 @@ struct cr_plugin {
 #endif
 
 #ifndef CR_MAIN_FUNC
-#   define CR_MAIN_FUNC "cr_main"
+#   define CR_MAIN_FUNC "zPlugin"
 #endif
 
 #ifndef CR_ASSERT
@@ -715,7 +715,7 @@ static void cr_plugin_sections_reload(cr_plugin &ctx,
                                       cr_plugin_section_version::e version);
 static void cr_plugin_sections_store(cr_plugin &ctx);
 static void cr_plugin_sections_backup(cr_plugin &ctx);
-static void cr_plugin_reload(cr_plugin &ctx);
+static int cr_plugin_reload(cr_plugin &ctx);
 static int cr_plugin_unload(cr_plugin &ctx, bool rollback, bool close);
 static bool cr_plugin_changed(cr_plugin &ctx);
 static bool cr_plugin_rollback(cr_plugin &ctx);
@@ -1148,12 +1148,11 @@ static so_handle cr_so_load(const std::string &filename) {
 
 static void* cr_so_symbol(so_handle handle, const char* name) {
     CR_ASSERT(handle);
-    auto sym = GetProcAddress(handle, name);
+    FARPROC sym = GetProcAddress(handle, name);
     if (!sym) {
         CR_ERROR("Couldn't find plugin entry point '%s': %d\n", name,
                  GetLastError());
-    }
-    return sym;
+    return (void*)sym;
 }
 
 #ifdef __MINGW32__
@@ -1555,6 +1554,8 @@ typedef struct mach_header_64 macho_hdr;
 typedef struct mach_header macho_hdr;
 #define CR_MH_MAGIC MH_MAGIC
 #endif
+
+#define CR_EVENT_FUNC "zPluginEventHandler"
 
 // osx,internal
 // save section information to be used during load/unload when copying
@@ -2011,18 +2012,20 @@ static bool cr_plugin_rollback(cr_plugin &ctx) {
 // update one time with `cr_op::CR_LOAD`. Note that this may fail due to crash
 // handling during this first update, effectivelly rollbacking if possible and
 // causing a consecutive `CR_LOAD` with the previous version.
-static void cr_plugin_reload(cr_plugin &ctx) {
+static int cr_plugin_reload(cr_plugin &ctx) {
     if (cr_plugin_changed(ctx)) {
         CR_TRACE
         if (!cr_plugin_load_internal(ctx, false)) {
-            return;
+            return -1;
         }
         int r = cr_plugin_main(ctx, ctx.version == 1 ? CR_INIT : CR_LOAD);
         if (r < 0 && !ctx.failure) {
             CR_LOG("2 FAILURE: %d\n", r);
             ctx.failure = CR_USER;
         }
+        return r;
     }
+    return 0;
 }
 
 // This is basically the plugin `main` function, should be called as
@@ -2080,7 +2083,7 @@ extern "C" bool cr_plugin_open(cr_plugin &ctx, const char *fullpath) {
     ctx.version = 0;
     ctx.failure = CR_NONE;
     cr_plat_init();
-    return true;
+    return cr_plugin_reload(ctx) == 0;
 }
 
 // 20200109 [DEPRECATED] Use `cr_plugin_open` instead.

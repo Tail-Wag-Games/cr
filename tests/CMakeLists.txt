@@ -11,7 +11,9 @@ cpmaddpackage(
   "BUILD_GTEST ON"
   SYSTEM
 )
-target_compile_options(gtest PRIVATE -Wno-error=maybe-uninitialized)
+if (NOT APPLE)
+    target_compile_options(gtest PRIVATE -Wno-error=maybe-uninitialized)
+endif()
 
 add_library(test_basic MODULE test_basic.cpp test_basic.x)
 target_include_directories(test_basic PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

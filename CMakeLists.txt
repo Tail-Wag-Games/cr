@@ -6,6 +6,7 @@ project(cr)
 
 if (PROJECT_IS_TOP_LEVEL)
   include(cmake/fetch_dependencies.cmake)
+  set (CMAKE_SHARED_LIBRARY_SUFFIX ".dylib")
   add_subdirectory(cr)
   add_subdirectory(tests)
   add_subdirectory(samples)

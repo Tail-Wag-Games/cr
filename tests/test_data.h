@@ -1,6 +1,10 @@
 // clang-format off
 #pragma once
 
+#if defined(__APPLE__)
+#include <__config>
+#endif
+
 #define CASE_TEST(id) case test_id::id: return test_##id(ctx, operation, data);
 #define DEFINE_TEST(id) int test_##id(cr_plugin *ctx, cr_op operation, test_data *data)
 

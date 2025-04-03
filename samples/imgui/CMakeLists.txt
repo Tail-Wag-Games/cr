@@ -42,11 +42,14 @@ add_subdirectory(GL)
 add_library(imgui_guest MODULE imgui_guest.cpp)
 target_include_directories(imgui_guest PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 set_imgui_sample_deps(imgui_guest)
+target_compile_features(imgui_guest PRIVATE cxx_std_17)
 
 add_executable(imgui_host imgui_host.cpp)
 target_include_directories(imgui_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set_imgui_sample_deps(imgui_host)
 target_compile_definitions(imgui_host PRIVATE CR_DEPLOY_PATH="${CMAKE_CURRENT_BINARY_DIR}")
+target_compile_features(imgui_host PRIVATE cxx_std_17)
+
 
 if (WIN32)
   add_custom_command(TARGET imgui_host POST_BUILD
